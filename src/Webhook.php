@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace WebhookPlatform;
+namespace Hookflow;
 
-use WebhookPlatform\Exception\WebhookPlatformException;
+use Hookflow\Exception\HookflowException;
 
 class Webhook
 {
@@ -13,12 +13,19 @@ class Webhook
     /**
      * Verify webhook signature using HMAC-SHA256.
      *
+     * The header is `t=<unix-ms>,v1=<hex>` and may carry more than one `v1`.
+     * After you rotate an endpoint's secret, Hookflow signs each delivery with
+     * both the new secret and the retired one for the endpoint's grace window
+     * (24 hours by default), so the new secret can be deployed whenever you like
+     * rather than at the instant you press rotate. The delivery is authentic if
+     * any `v1` matches.
+     *
      * @param string $payload Raw request body
-     * @param string $signature X-Signature header value (format: t=timestamp,v1=signature)
+     * @param string $signature X-Signature header value (format: t=timestamp,v1=signature[,v1=...])
      * @param string $secret Endpoint webhook secret
      * @param int $toleranceMs Maximum age of signature in milliseconds
      * @return bool True if signature is valid
-     * @throws WebhookPlatformException If signature is invalid or expired
+     * @throws HookflowException If signature is invalid or expired
      */
     public static function verifySignature(
         string $payload,
@@ -27,22 +34,25 @@ class Webhook
         int $toleranceMs = self::DEFAULT_TOLERANCE_MS
     ): bool {
         if (empty($signature)) {
-            throw new WebhookPlatformException('Missing signature header', 400, 'invalid_signature');
+            throw new HookflowException('Missing signature header', 400, 'invalid_signature');
         }
 
         $timestamp = null;
-        $sig = null;
+        // Collected, not overwritten: a header sent during a secret rotation carries
+        // one v1 per valid secret, and keeping only the last would reject whichever
+        // of the pair the receiver is currently holding.
+        $signatures = [];
 
         foreach (explode(',', $signature) as $part) {
             if (str_starts_with($part, 't=')) {
-                $timestamp = substr($part, 2);
+                $timestamp = trim(substr($part, 2));
             } elseif (str_starts_with($part, 'v1=')) {
-                $sig = substr($part, 3);
+                $signatures[] = trim(substr($part, 3));
             }
         }
 
-        if ($timestamp === null || $sig === null) {
-            throw new WebhookPlatformException(
+        if ($timestamp === null || $signatures === []) {
+            throw new HookflowException(
                 'Invalid signature format. Expected: t=timestamp,v1=signature',
                 400,
                 'invalid_signature'
@@ -53,7 +63,7 @@ class Webhook
         $nowMs = (int) (microtime(true) * 1000);
 
         if (abs($nowMs - $timestampMs) > $toleranceMs) {
-            throw new WebhookPlatformException(
+            throw new HookflowException(
                 'Webhook timestamp is outside tolerance window',
                 400,
                 'timestamp_expired'
@@ -63,8 +73,17 @@ class Webhook
         $signedPayload = "{$timestamp}.{$payload}";
         $expectedSignature = hash_hmac('sha256', $signedPayload, $secret);
 
-        if (!hash_equals($expectedSignature, $sig)) {
-            throw new WebhookPlatformException('Invalid signature', 400, 'invalid_signature');
+        // Every candidate is compared, with no early exit, so the time taken does
+        // not depend on which position matched.
+        $matched = false;
+        foreach ($signatures as $candidate) {
+            if (hash_equals($expectedSignature, $candidate)) {
+                $matched = true;
+            }
+        }
+
+        if (!$matched) {
+            throw new HookflowException('Invalid signature', 400, 'invalid_signature');
         }
 
         return true;
@@ -73,12 +92,23 @@ class Webhook
     /**
      * Construct a webhook event from request, verifying signature.
      *
+     * What Hookflow actually PUTs on the wire is the event's **payload**, not
+     * an envelope: a `$client->events->send(type: 'order.completed', data:
+     * [...])` arrives at your endpoint as the `data` array alone, with the
+     * identifiers carried in headers (`X-Event-Id`, `X-Delivery-Id`,
+     * `X-Timestamp`, `X-Sequence-Number`). So `eventId` / `deliveryId` /
+     * `timestamp` are always populated for a real delivery and `data` is the
+     * decoded body, but `type` is only populated when the body itself carries
+     * a `type` key — which for a default subscription it does not. Route on
+     * the payload, or configure the subscription's `payloadTemplate` to wrap
+     * the event so that `type` becomes part of the body.
+     *
      * @param string $payload Raw request body
      * @param array $headers Request headers (case-insensitive)
      * @param string $secret Endpoint webhook secret
      * @param int $toleranceMs Maximum age of signature in milliseconds
      * @return array Parsed webhook event with eventId, deliveryId, timestamp, type, data
-     * @throws WebhookPlatformException If signature is invalid or payload is malformed
+     * @throws HookflowException If signature is invalid or payload is malformed
      */
     public static function constructEvent(
         string $payload,
@@ -98,14 +128,14 @@ class Webhook
         $deliveryId = $normalizedHeaders['x-delivery-id'] ?? '';
 
         if (empty($signature)) {
-            throw new WebhookPlatformException('Missing X-Signature header', 400, 'missing_header');
+            throw new HookflowException('Missing X-Signature header', 400, 'missing_header');
         }
 
         self::verifySignature($payload, $signature, $secret, $toleranceMs);
 
         $data = json_decode($payload, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new WebhookPlatformException('Invalid JSON payload', 400, 'invalid_payload');
+            throw new HookflowException('Invalid JSON payload', 400, 'invalid_payload');
         }
 
         return [

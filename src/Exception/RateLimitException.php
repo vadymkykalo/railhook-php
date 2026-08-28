@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace WebhookPlatform\Exception;
+namespace Hookflow\Exception;
 
-class RateLimitException extends WebhookPlatformException
+class RateLimitException extends HookflowException
 {
     private array $rateLimitInfo;
 
@@ -19,9 +19,16 @@ class RateLimitException extends WebhookPlatformException
         return $this->rateLimitInfo;
     }
 
+    /**
+     * Milliseconds to wait before retrying.
+     *
+     * `reset` is the raw X-RateLimit-Reset header, which the API sends as a
+     * Unix timestamp in **seconds**; subtracting a millisecond clock from it
+     * directly always yields 0.
+     */
     public function getRetryAfterMs(): int
     {
         $now = (int) (microtime(true) * 1000);
-        return max(0, $this->rateLimitInfo['reset'] - $now);
+        return max(0, $this->rateLimitInfo['reset'] * 1000 - $now);
     }
 }

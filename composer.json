@@ -1,9 +1,15 @@
 {
     "name": "webhook-platform/php",
-    "description": "Official PHP SDK for Webhook Platform",
+    "description": "Official PHP SDK for Hookflow \u2014 reliable webhook infrastructure",
     "type": "library",
     "license": "MIT",
-    "keywords": ["webhook", "webhooks", "api", "events", "delivery"],
+    "keywords": [
+        "webhook",
+        "webhooks",
+        "api",
+        "events",
+        "delivery"
+    ],
     "authors": [
         {
             "name": "Vadym Kykalo",
@@ -21,16 +27,17 @@
     },
     "autoload": {
         "psr-4": {
-            "WebhookPlatform\\": "src/"
+            "Hookflow\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "WebhookPlatform\\Tests\\": "tests/"
+            "Hookflow\\Tests\\": "tests/"
         }
     },
     "scripts": {
         "test": "phpunit",
+        "test:contract": "phpunit -c phpunit.contract.xml",
         "analyse": "phpstan analyse src"
     },
     "config": {
