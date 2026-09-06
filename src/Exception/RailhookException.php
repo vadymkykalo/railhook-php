@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Hookflow\Exception;
+namespace Railhook\Exception;
 
-class HookflowException extends \Exception
+class RailhookException extends \Exception
 {
     protected int $statusCode;
     protected ?string $errorCode;

@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Hookflow;
+namespace Railhook;
 
-use Hookflow\Api\Events;
-use Hookflow\Api\Endpoints;
-use Hookflow\Api\Subscriptions;
-use Hookflow\Api\Deliveries;
-use Hookflow\Api\IncomingSources;
-use Hookflow\Api\IncomingEvents;
+use Railhook\Api\Events;
+use Railhook\Api\Endpoints;
+use Railhook\Api\Subscriptions;
+use Railhook\Api\Deliveries;
+use Railhook\Api\IncomingSources;
+use Railhook\Api\IncomingEvents;
 
-class Hookflow
+class Railhook
 {
-    private const SDK_VERSION = '2.11.0';
+    private const SDK_VERSION = '2.12.0';
 
     private string $apiKey;
     private string $baseUrl;
@@ -103,7 +103,7 @@ class Hookflow
         $headers = [
             'X-API-Key: ' . $this->apiKey,
             'Content-Type: application/json',
-            'User-Agent: hookflow-php/' . self::SDK_VERSION,
+            'User-Agent: railhook-php/' . self::SDK_VERSION,
         ];
 
         if ($idempotencyKey) {
@@ -160,7 +160,7 @@ class Hookflow
         curl_close($ch);
 
         if ($error) {
-            throw new Exception\HookflowException("cURL error: $error", 0);
+            throw new Exception\RailhookException("cURL error: $error", 0);
         }
 
         $headerStr = substr($response, 0, $headerSize);
@@ -208,7 +208,7 @@ class Hookflow
         return null;
     }
 
-    private function handleError(int $status, array $body, ?array $rateLimitInfo): Exception\HookflowException
+    private function handleError(int $status, array $body, ?array $rateLimitInfo): Exception\RailhookException
     {
         $message = $body['message'] ?? 'Unknown error';
 
@@ -226,7 +226,7 @@ class Hookflow
             // Everything the match does not name (403, 413, 422, 5xx) keeps the
             // envelope's own `error` code, so getErrorCode() is not null for
             // exactly the statuses the README's error table documents.
-            default => new Exception\HookflowException($message, $status, $body['error'] ?? null),
+            default => new Exception\RailhookException($message, $status, $body['error'] ?? null),
         };
     }
 }
